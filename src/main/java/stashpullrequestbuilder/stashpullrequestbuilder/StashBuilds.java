@@ -41,6 +41,7 @@ public class StashBuilds {
         } catch (IOException e) {
             logger.log(Level.SEVERE, "Can't update build description", e);
         }
+        logger.log(Level.INFO, "client: " + repository.getClient());
     }
 
     public void onCompleted(Run run, TaskListener listener) {

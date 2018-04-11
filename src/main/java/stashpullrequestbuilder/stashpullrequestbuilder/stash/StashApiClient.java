@@ -77,6 +77,12 @@ public class StashApiClient {
         this.ignoreSsl = ignoreSsl;
     }
 
+    @Override
+    protected void finalize() throws Throwable
+    {
+        logger.log(Level.INFO, "StashApiClient finalize");
+    }
+
     public List<StashPullRequestResponseValue> getPullRequests() {
         List<StashPullRequestResponseValue> pullRequestResponseValues = new ArrayList<StashPullRequestResponseValue>();
         try {

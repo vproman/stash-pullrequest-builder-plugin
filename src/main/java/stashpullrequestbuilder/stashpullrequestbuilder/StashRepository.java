@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.logging.Logger;
+import java.util.logging.Level;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -49,16 +50,10 @@ public class StashRepository {
     private String projectPath;
     private StashPullRequestsBuilder builder;
     private StashBuildTrigger trigger;
-    private StashApiClient client;
 
-    public StashRepository(String projectPath, StashPullRequestsBuilder builder) {
-        this.projectPath = projectPath;
-        this.builder = builder;
-    }
-
-    public void init() {
+    private StashApiClient getClient() {
         trigger = this.builder.getTrigger();
-        client = new StashApiClient(
+        return new StashApiClient(
                 trigger.getStashHost(),
                 trigger.getUsername(),
                 trigger.getPassword(),
@@ -67,9 +62,19 @@ public class StashRepository {
                 trigger.isIgnoreSsl());
     }
 
+    public void init() {
+
+    }
+
+    public StashRepository(String projectPath, StashPullRequestsBuilder builder) {
+        this.projectPath = projectPath;
+        this.builder = builder;
+    }
+
     public Collection<StashPullRequestResponseValue> getTargetPullRequests() {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         logger.info(format("Fetch PullRequests (%s).", builder.getJob().getName()));
-        List<StashPullRequestResponseValue> pullRequests = client.getPullRequests();
+        List<StashPullRequestResponseValue> pullRequests = getClient().getPullRequests();
         List<StashPullRequestResponseValue> targetPullRequests = new ArrayList<StashPullRequestResponseValue>();
         for(StashPullRequestResponseValue pullRequest : pullRequests) {
             if (isBuildTarget(pullRequest)) {
@@ -80,10 +85,11 @@ public class StashRepository {
     }
 
     public String postBuildStartCommentTo(StashPullRequestResponseValue pullRequest) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         String sourceCommit = pullRequest.getFromRef().getLatestCommit();
         String destinationCommit = pullRequest.getToRef().getLatestCommit();
         String comment = format(BUILD_START_MARKER, builder.getJob().getDisplayName(), sourceCommit, destinationCommit);
-        StashPullRequestComment commentResponse = this.client.postPullRequestComment(pullRequest.getId(), comment);
+        StashPullRequestComment commentResponse = this.getClient().postPullRequestComment(pullRequest.getId(), comment);
         return commentResponse.getCommentId().toString();
     }
 
@@ -114,12 +120,13 @@ public class StashRepository {
    }
 
     public Map<String, String> getAdditionalParameters(StashPullRequestResponseValue pullRequest){
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         StashPullRequestResponseValueRepository destination = pullRequest.getToRef();
         String owner = destination.getRepository().getProjectName();
         String repositoryName = destination.getRepository().getRepositoryName();
 
         String id = pullRequest.getId();
-        List<StashPullRequestComment> comments = client.getPullRequestComments(owner, repositoryName, id);
+        List<StashPullRequestComment> comments = getClient().getPullRequestComments(owner, repositoryName, id);
         if (comments != null) {
             Collections.sort(comments);
 //          Collections.reverse(comments);
@@ -143,6 +150,7 @@ public class StashRepository {
     }
 
     public void addFutureBuildTasks(Collection<StashPullRequestResponseValue> pullRequests) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         for(StashPullRequestResponseValue pullRequest : pullRequests) {
         	Map<String, String> additionalParameters = getAdditionalParameters(pullRequest);
                 if (trigger.getDeletePreviousBuildFinishComments()) {
@@ -170,10 +178,14 @@ public class StashRepository {
     }
 
     public void deletePullRequestComment(String pullRequestId, String commentId) {
-        this.client.deletePullRequestComment(pullRequestId, commentId);
+        logger.info(this.builder.getJob().getName() + " pullRequestId: " + pullRequestId + ", commentId: " + commentId);
+        logger.info(this.builder.getJob().getName() + " this.getClient(): " + this.getClient());
+        logger.info(this.builder.getJob().getName() + " client: " + getClient());
+        this.getClient().deletePullRequestComment(pullRequestId, commentId);
     }
 
     private String getMessageForBuildResult(Result result) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         String message = BUILD_FAILURE_COMMENT;
         if (result == Result.SUCCESS) {
             message = BUILD_SUCCESS_COMMENT;
@@ -191,22 +203,25 @@ public class StashRepository {
     }
 
     public void postFinishedComment(String pullRequestId, String sourceCommit,  String destinationCommit, Result buildResult, String buildUrl, int buildNumber, String additionalComment, String duration) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         String message = getMessageForBuildResult(buildResult);
         String comment = format(BUILD_FINISH_SENTENCE, builder.getJob().getDisplayName(), sourceCommit, destinationCommit, message, buildUrl, buildNumber, duration);
 
         comment = comment.concat(additionalComment);
 
-        this.client.postPullRequestComment(pullRequestId, comment);
+        this.getClient().postPullRequestComment(pullRequestId, comment);
     }
 
     public boolean mergePullRequest(String pullRequestId, String version)
     {
-        return this.client.mergePullRequest(pullRequestId, version);
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
+        return this.getClient().mergePullRequest(pullRequestId, version);
     }
 
     private Boolean isPullRequestMergable(StashPullRequestResponseValue pullRequest) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         if (trigger.isCheckMergeable() || trigger.isCheckNotConflicted()) {
-            StashPullRequestMergableResponse mergable = client.getPullRequestMergeStatus(pullRequest.getId());
+            StashPullRequestMergableResponse mergable = getClient().getPullRequestMergeStatus(pullRequest.getId());
             boolean res = true;
             if (trigger.isCheckMergeable())
                 res = res && mergable.getCanMerge();
@@ -218,13 +233,14 @@ public class StashRepository {
     }
 
     private void deletePreviousBuildFinishedComments(StashPullRequestResponseValue pullRequest) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
 
         StashPullRequestResponseValueRepository destination = pullRequest.getToRef();
         String owner = destination.getRepository().getProjectName();
         String repositoryName = destination.getRepository().getRepositoryName();
         String id = pullRequest.getId();
 
-        List<StashPullRequestComment> comments = client.getPullRequestComments(owner, repositoryName, id);
+        List<StashPullRequestComment> comments = getClient().getPullRequestComments(owner, repositoryName, id);
 
         if (comments != null) {
             Collections.sort(comments);
@@ -246,6 +262,7 @@ public class StashRepository {
     }
 
     private boolean isBuildTarget(StashPullRequestResponseValue pullRequest) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
 
         boolean shouldBuild = true;
 
@@ -279,7 +296,7 @@ public class StashRepository {
             String destinationCommit = destination.getLatestCommit();
 
             String id = pullRequest.getId();
-            List<StashPullRequestComment> comments = client.getPullRequestComments(owner, repositoryName, id);
+            List<StashPullRequestComment> comments = getClient().getPullRequestComments(owner, repositoryName, id);
 
             if (comments != null) {
                 Collections.sort(comments);
@@ -346,6 +363,7 @@ public class StashRepository {
     }
 
     private boolean isForTargetBranch(StashPullRequestResponseValue pullRequest) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         String targetBranchesToBuild = this.trigger.getTargetBranchesToBuild();
         if (targetBranchesToBuild !=null && !"".equals(targetBranchesToBuild)) {
             String[] branches = targetBranchesToBuild.split(",");
@@ -360,6 +378,7 @@ public class StashRepository {
     }
 
     private boolean isSkipBuild(String pullRequestContentString) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         String skipPhrases = this.trigger.getCiSkipPhrases();
         if (skipPhrases != null && !"".equals(skipPhrases)) {
             String[] phrases = skipPhrases.split(",");
@@ -373,6 +392,7 @@ public class StashRepository {
     }
 
     private boolean isPhrasesContain(String text, String phrase) {
+        logger.info(this.builder.getJob().getName() + " client: " + this.getClient());
         return text != null && text.toLowerCase().contains(phrase.trim().toLowerCase());
     }
 }
